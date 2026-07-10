@@ -84,3 +84,9 @@ func Login(c *gin.Context) {
 		"token": token,
 	})
 }
+func Profile(c *gin.Context) {
+
+	c.JSON(200, gin.H{
+		"message": "Protected Route Accessed Successfully",
+	})
+}
