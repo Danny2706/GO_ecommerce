@@ -3,9 +3,14 @@ package routes
 import "github.com/gin-gonic/gin"
 
 func SetupRoutes(router *gin.Engine) {
+
 	router.GET("/", func(c *gin.Context) {
 		c.JSON(200, gin.H{
-			"message": "Welcome to Go E-Commerce API",
+			"message": "Go E-Commerce API",
 		})
 	})
+
+	api := router.Group("/api/v1")
+
+	AuthRoutes(api)
 }
