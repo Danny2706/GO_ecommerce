@@ -36,3 +36,24 @@ func Register(name, email, password string) error {
 
 	return repositories.CreateUser(&user)
 }
+
+func Login(email, password string) (string, error) {
+
+	user, err := repositories.GetUserByEmail(email)
+
+	if err != nil {
+		return "", errors.New("invalid email or password")
+	}
+
+	if !utils.CheckPassword(password, user.Password) {
+		return "", errors.New("invalid email or password")
+	}
+
+	token, err := utils.GenerateToken(user.ID, user.Email)
+
+	if err != nil {
+		return "", err
+	}
+
+	return token, nil
+}

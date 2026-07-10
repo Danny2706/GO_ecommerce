@@ -13,6 +13,10 @@ type RegisterRequest struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,min=6"`
 }
+type LoginRequest struct {
+    Email    string `json:"email" binding:"required,email"`
+    Password string `json:"password" binding:"required"`
+}
 
 func Register(c *gin.Context) {
 
@@ -47,5 +51,36 @@ func Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
 		"message": "User registered successfully",
+	})
+}
+func Login(c *gin.Context) {
+
+	var req LoginRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+
+		return
+	}
+
+	token, err := services.Login(req.Email, req.Password)
+
+	if err != nil {
+
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"token": token,
 	})
 }
