@@ -6,7 +6,6 @@ import (
 )
 
 // RegisterRoutes initializes product handler dependencies and binds endpoints to gin router group.
-// Go Concept: Clean modular route registration encapsulating dependency wiring.
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	repo := NewRepository(db)
 	service := NewService(repo)
@@ -17,5 +16,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		products.POST("", handler.Create)
 		products.GET("", handler.List)
 		products.GET("/:id", handler.GetByID)
+		products.PUT("/:id", handler.Update)
+		products.DELETE("/:id", handler.Delete)
 	}
 }

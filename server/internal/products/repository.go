@@ -7,11 +7,10 @@ import (
 )
 
 // Repository defines data access contract for Products.
-// Go Concept: Interfaces in Go are satisfied implicitly. Defining interfaces near usage enables easy mocking/testing.
 type Repository interface {
 	Create(ctx context.Context, product *Product) error
 	GetByID(ctx context.Context, id uint) (*Product, error)
-	List(ctx context.Context, limit, offset int) ([]Product, int64, error)
+	List(ctx context.Context, filter ProductFilter) ([]Product, int64, error)
 	Update(ctx context.Context, product *Product) error
 	Delete(ctx context.Context, id uint) error
 }
@@ -21,7 +20,6 @@ type repository struct {
 }
 
 // NewRepository creates a new product database repository instance.
-// Go Concept: Constructor function returning concrete struct satisfying an interface.
 func NewRepository(db *gorm.DB) Repository {
 	return &repository{db: db}
 }
@@ -38,16 +36,26 @@ func (r *repository) GetByID(ctx context.Context, id uint) (*Product, error) {
 	return &product, nil
 }
 
-func (r *repository) List(ctx context.Context, limit, offset int) ([]Product, int64, error) {
+func (r *repository) List(ctx context.Context, filter ProductFilter) ([]Product, int64, error) {
 	var products []Product
 	var total int64
 
 	db := r.db.WithContext(ctx).Model(&Product{})
+
+	if filter.CategoryID > 0 {
+		db = db.Where("category_id = ?", filter.CategoryID)
+	}
+
+	if filter.Search != "" {
+		db = db.Where("title ILIKE ? OR description ILIKE ?", "%"+filter.Search+"%", "%"+filter.Search+"%")
+	}
+
 	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	if err := db.Limit(limit).Offset(offset).Find(&products).Error; err != nil {
+	offset := (filter.Page - 1) * filter.PageSize
+	if err := db.Limit(filter.PageSize).Offset(offset).Find(&products).Error; err != nil {
 		return nil, 0, err
 	}
 

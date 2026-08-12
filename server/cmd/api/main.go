@@ -21,12 +21,12 @@ import (
 	"github.com/example/habeshamart/internal/payments"
 	"github.com/example/habeshamart/internal/products"
 	"github.com/example/habeshamart/internal/users"
+	"github.com/example/habeshamart/internal/workers"
 	"github.com/example/habeshamart/pkg/logger"
 	"github.com/example/habeshamart/pkg/response"
 	"github.com/gin-gonic/gin"
 )
 
-// Go Concept: main function is the entry point of every Go executable application.
 func main() {
 	// 1. Load configuration parameters
 	cfg, err := config.LoadConfig()
@@ -43,27 +43,45 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// 3. Initialize PostgreSQL database connection via GORM
+	// 3. Initialize background worker pool
+	wpCtx, cancelWorkers := context.WithCancel(context.Background())
+	defer cancelWorkers()
+
+	workerPool := workers.NewWorkerPool(100)
+	workerPool.Start(wpCtx, 3) // Launch 3 background worker goroutines
+	logger.Log.Info("Background worker pool started with 3 workers")
+
+	// 4. Initialize PostgreSQL database connection via GORM
 	db, err := database.InitDB(cfg.DatabaseURL)
 	if err != nil {
 		logger.Log.Warn("Database connection deferred/failed", "error", err.Error())
 	} else {
-		// AutoMigrate initial models for development
-		if err := db.AutoMigrate(&products.Product{}); err != nil {
+		// AutoMigrate domain models
+		if err := db.AutoMigrate(
+			&users.User{},
+			&categories.Category{},
+			&products.Product{},
+			&cart.CartItem{},
+			&orders.Order{},
+			&orders.OrderItem{},
+			&payments.Payment{},
+			&inventory.InventoryLog{},
+			&notifications.Notification{},
+		); err != nil {
 			logger.Log.Error("Failed to auto-migrate database models", "error", err.Error())
 		}
 	}
 
-	// 4. Initialize Redis cache connection
+	// 5. Initialize Redis cache connection
 	rdb, err := database.InitRedis(cfg.RedisURL)
 	if err != nil {
 		logger.Log.Warn("Redis connection deferred/failed", "error", err.Error())
 	}
 
-	// 5. Create Gin Web Router with zero default middlewares
+	// 6. Create Gin Web Router with zero default middlewares
 	r := gin.New()
 
-	// 6. Register Global Middlewares
+	// 7. Register Global Middlewares
 	r.Use(middleware.Logger())
 	r.Use(middleware.Recovery())
 	r.Use(middleware.CORS())
@@ -71,7 +89,7 @@ func main() {
 		r.Use(middleware.RateLimiter(rdb))
 	}
 
-	// 7. System Health Check Route
+	// 8. System Health Check Route
 	r.GET("/health", func(c *gin.Context) {
 		dbStatus := "disconnected"
 		if db != nil {
@@ -96,23 +114,21 @@ func main() {
 		})
 	})
 
-	// 8. Register API v1 Route Groups
+	// 9. Register API v1 Route Groups
 	v1 := r.Group("/api/v1")
 	{
 		auth.RegisterRoutes(v1, db, cfg.JWTSecret)
-		users.RegisterRoutes(v1, db)
-		if db != nil {
-			products.RegisterRoutes(v1, db)
-		}
+		users.RegisterRoutes(v1, db, cfg.JWTSecret)
+		products.RegisterRoutes(v1, db)
 		categories.RegisterRoutes(v1, db)
-		cart.RegisterRoutes(v1, db)
-		orders.RegisterRoutes(v1, db)
-		payments.RegisterRoutes(v1, db)
+		cart.RegisterRoutes(v1, db, cfg.JWTSecret)
+		orders.RegisterRoutes(v1, db, cfg.JWTSecret)
+		payments.RegisterRoutes(v1, db, cfg.JWTSecret)
 		inventory.RegisterRoutes(v1, db)
-		notifications.RegisterRoutes(v1, db)
+		notifications.RegisterRoutes(v1, db, cfg.JWTSecret)
 	}
 
-	// 9. Configure HTTP Server with Timeout Settings
+	// 10. Configure HTTP Server with Timeout Settings
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
 		Handler:      r,
@@ -121,7 +137,6 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Go Concept: Graceful Shutdown using Channels & OS Signal interception
 	go func() {
 		logger.Log.Info("Server listening on port", "port", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -130,7 +145,6 @@ func main() {
 		}
 	}()
 
-	// Wait for interrupt signal to gracefully shut down the server with a timeout of 5 seconds.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
@@ -144,5 +158,6 @@ func main() {
 		logger.Log.Error("Server forced to shutdown", "error", err.Error())
 	}
 
+	workerPool.Stop()
 	logger.Log.Info("Server exiting gracefully")
 }
