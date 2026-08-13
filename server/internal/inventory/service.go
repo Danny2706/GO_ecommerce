@@ -8,7 +8,7 @@ import (
 
 // Service defines inventory management business logic.
 type Service interface {
-	GetInventoryStatus(ctx context.Context, productID uint) (*products.Product, []InventoryLog, error)
+	GetInventoryStatus(ctx context.Context) ([]InventoryStatusItem, error)
 	AdjustStock(ctx context.Context, input AdjustStockInput) (*InventoryLog, error)
 }
 
@@ -18,28 +18,75 @@ type service struct {
 }
 
 // NewService creates a new Inventory Service instance.
-func NewService(repo Repository, productRepo products.Repository) Service {
-	return &service{repo: repo, productRepo: productRepo}
+func NewService(
+	repo Repository,
+	productRepo products.Repository,
+) Service {
+	return &service{
+		repo:        repo,
+		productRepo: productRepo,
+	}
 }
 
-func (s *service) GetInventoryStatus(ctx context.Context, productID uint) (*products.Product, []InventoryLog, error) {
-	product, err := s.productRepo.GetByID(ctx, productID)
+// GetInventoryStatus returns inventory status for all products.
+func (s *service) GetInventoryStatus(
+	ctx context.Context,
+) ([]InventoryStatusItem, error) {
+
+	productList, err := s.repo.GetAllProducts(ctx)
 	if err != nil {
-		return nil, nil, products.ErrProductNotFound
+		return nil, err
 	}
 
-	logs, err := s.repo.GetLogsByProductID(ctx, productID)
-	if err != nil {
-		return nil, nil, err
+	items := make([]InventoryStatusItem, 0, len(productList))
+
+	for _, product := range productList {
+
+		status := getInventoryStatus(product.Stock)
+
+		items = append(items, InventoryStatusItem{
+			ID:         product.ID,
+			Title:      product.Title,
+			SKU:        product.SKU,
+			Stock:      product.Stock,
+			CategoryID: product.CategoryID,
+			IsActive:   product.IsActive,
+			Status:     status,
+		})
 	}
 
-	return product, logs, nil
+	return items, nil
 }
 
-func (s *service) AdjustStock(ctx context.Context, input AdjustStockInput) (*InventoryLog, error) {
+// getInventoryStatus determines the current inventory status.
+func getInventoryStatus(stock int) string {
+	switch {
+	case stock <= 0:
+		return "out_of_stock"
+
+	case stock <= 10:
+		return "low_stock"
+
+	default:
+		return "in_stock"
+	}
+}
+
+// AdjustStock adjusts a product's stock and creates an inventory log.
+func (s *service) AdjustStock(
+	ctx context.Context,
+	input AdjustStockInput,
+) (*InventoryLog, error) {
+
+	// Make sure the product exists.
 	_, err := s.productRepo.GetByID(ctx, input.ProductID)
 	if err != nil {
 		return nil, products.ErrProductNotFound
+	}
+
+	// Prevent stock from becoming negative for sales/adjustments.
+	if input.Type == TypeSale && input.StockChange > 0 {
+		input.StockChange = -input.StockChange
 	}
 
 	log := &InventoryLog{

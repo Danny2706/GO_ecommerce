@@ -1,13 +1,13 @@
 package config
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/joho/godotenv"
 )
 
 // Config holds all configuration parameters for the application.
-// Go Concept: Struct tags can be used to map environment variables or configuration fields.
 type Config struct {
 	Port        string
 	DatabaseURL string
@@ -16,26 +16,43 @@ type Config struct {
 	Environment string
 }
 
-// LoadConfig loads application configuration from environment variables and an optional .env file.
+// LoadConfig loads application configuration from environment variables
+// and an optional .env file.
 func LoadConfig() (*Config, error) {
-	// Attempt to load .env file if available (ignore error if file is missing in production environments)
+	// Load .env when running locally.
+	// In production, environment variables provided by the platform
+	// will be used instead.
 	_ = godotenv.Load()
 
 	cfg := &Config{
 		Port:        getEnv("PORT", "8080"),
-		DatabaseURL: getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/habeshamart?sslmode=disable"),
-		RedisURL:    getEnv("REDIS_URL", "redis://localhost:6379/0"),
-		JWTSecret:   getEnv("JWT_SECRET", "super-secret-habeshamart-key-change-in-production"),
+		DatabaseURL: os.Getenv("DATABASE_URL"),
+		RedisURL:    os.Getenv("REDIS_URL"),
+		JWTSecret:   os.Getenv("JWT_SECRET"),
 		Environment: getEnv("ENVIRONMENT", "development"),
+	}
+
+	// Required configuration
+	if cfg.DatabaseURL == "" {
+		return nil, fmt.Errorf("DATABASE_URL is required")
+	}
+
+	if cfg.RedisURL == "" {
+		return nil, fmt.Errorf("REDIS_URL is required")
+	}
+
+	if cfg.JWTSecret == "" {
+		return nil, fmt.Errorf("JWT_SECRET is required")
 	}
 
 	return cfg, nil
 }
 
-// Helper function to fetch environment variables with fallback default values
+// getEnv returns an environment variable or a default value.
 func getEnv(key, defaultValue string) string {
 	if value, exists := os.LookupEnv(key); exists && value != "" {
 		return value
 	}
+
 	return defaultValue
 }

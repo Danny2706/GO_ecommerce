@@ -1,28 +1,38 @@
+# =========================
 # Build Stage
-FROM golang:1.22-alpine AS builder
+# =========================
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 
-# Copy dependency definition files first for optimal layer caching
+# Copy dependency files first for better layer caching
 COPY go.mod go.sum ./
+
+# Download Go dependencies
 RUN go mod download
 
-# Copy application source code
+# Copy application source
 COPY . .
 
-# Build statically linked Go binary
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/api ./cmd/api
+# Build production binary
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-w -s" \
+    -o /app/api \
+    ./cmd/api
 
-# Production Runtime Stage
-FROM alpine:latest
 
+# =========================
+# Production Stage
+# =========================
+FROM alpine:3.20
+
+# HTTPS certificates + timezone data
 RUN apk --no-cache add ca-certificates tzdata
 
 WORKDIR /app
 
-# Copy binary from build stage
+# Copy compiled binary
 COPY --from=builder /app/api .
-COPY --from=builder /app/.env.example .env
 
 EXPOSE 8080
 
